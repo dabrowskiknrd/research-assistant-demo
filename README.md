@@ -1,6 +1,8 @@
 # Research Assistant Demo
 
-A modern AI-powered research assistant built with Python.
+An agentic research assistant that processes PDFs, searches the web, and manages a local book database.
+
+It is inspired by [build-your-own-deep-research-agent](https://github.com/hugobowne/build-your-own-deep-research-agent) by [Hugo Bowne-Anderson](https://github.com/hugobowne) and [Ivan Leo](https://github.com/ivanleomk), and reuses many ideas from that source.
 
 ## Setup
 
