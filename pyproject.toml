@@ -23,6 +23,8 @@ dependencies = [
     "pydantic-ai-slim[google,logfire]>=1.67.0",
     "rich>=14.3.3",
     "textual>=8.1.1",
+    "fastapi[standard]>=0.135.2",
+    "gradio>=6.10.0",
 ]
 
 [dependency-groups]

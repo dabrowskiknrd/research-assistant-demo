@@ -63,6 +63,7 @@ logs/
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
+notebooks/local/
 
 # OS
 .DS_Store
