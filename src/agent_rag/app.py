@@ -259,6 +259,7 @@ def query(question: str, books: list[str] | None = None) -> str:
         model=GEMINI_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
+            max_output_tokens=8192,
             tools=[
                 types.Tool(
                     file_search=types.FileSearch(
@@ -270,6 +271,84 @@ def query(question: str, books: list[str] | None = None) -> str:
     )
 
     return response.text
+
+
+# ---------------------------------------------------------------------------
+# List: show all files currently indexed in the Gemini FileSearchStore
+# ---------------------------------------------------------------------------
+
+
+@app.function(
+    secrets=[modal.Secret.from_dotenv(__file__)],
+)
+def list_store() -> dict:
+    """Return all files currently indexed in the Gemini FileSearchStore.
+
+    Returns a dict with ``store_name`` and ``files`` (list of display names).
+    """
+    from google import genai
+
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+    store_name = store_dict.get(STORE_KEY, None)
+    if not store_name:
+        print("[list_store] No FileSearchStore found in Modal Dict.")
+        return {"store_name": None, "files": []}
+
+    files = []
+    for entry in client.file_search_stores.documents.list(parent=store_name):
+        display = entry.display_name or entry.name
+        files.append(display)
+        print(f"[list_store]   {display}")
+
+    print(f"[list_store] {len(files)} file(s) in store: {store_name}")
+    return {"store_name": store_name, "files": sorted(files)}
+
+
+# ---------------------------------------------------------------------------
+# Remove: delete specific files from the store by display name
+# ---------------------------------------------------------------------------
+
+
+@app.function(
+    secrets=[modal.Secret.from_dotenv(__file__)],
+)
+def remove_files(files: list[str]) -> dict:
+    """Remove specific files from the Gemini FileSearchStore by display name.
+
+    Parameters
+    ----------
+    files:
+        List of display names (filenames) to remove, e.g.
+        ``["BookTitle.pdf"]``.  Names are matched case-insensitively.
+    """
+    from google import genai
+
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+    store_name = store_dict.get(STORE_KEY, None)
+    if not store_name:
+        print("[remove] No FileSearchStore found in Modal Dict — nothing to remove.")
+        return {"removed": 0, "not_found": files}
+
+    targets = {f.lower() for f in files}
+    removed, not_found = 0, list(files)
+
+    for doc in client.file_search_stores.documents.list(parent=store_name):
+        display = (doc.display_name or doc.name).lower()
+        if display in targets:
+            client.file_search_stores.documents.delete(
+                name=doc.name,
+                config={"force": True},
+            )
+            print(f"[remove]   Removed: {doc.display_name or doc.name}")
+            not_found = [f for f in not_found if f.lower() != display]
+            removed += 1
+
+    if not_found:
+        print(f"[remove] Not found in store: {not_found}")
+    print(f"[remove] Done. {removed} file(s) removed.")
+    return {"removed": removed, "not_found": not_found}
 
 
 # ---------------------------------------------------------------------------
@@ -303,14 +382,12 @@ def purge_store() -> dict:
     print(f"[purge] Purging FileSearchStore: {store_name}")
 
     removed = 0
-    for file_entry in client.file_search_stores.list_files(
-        file_search_store_name=store_name
-    ):
-        client.file_search_stores.remove_file(
-            file_search_store_name=store_name,
-            file_search_store_file_id=file_entry.name,
+    for doc in client.file_search_stores.documents.list(parent=store_name):
+        client.file_search_stores.documents.delete(
+            name=doc.name,
+            config={"force": True},
         )
-        print(f"[purge]   Removed: {file_entry.name}")
+        print(f"[purge]   Removed: {doc.display_name or doc.name}")
         removed += 1
 
     client.file_search_stores.delete(name=store_name)
@@ -414,6 +491,24 @@ def main(
         answer = query.remote(question, book_list)
         print(f"\n[answer]\n{answer}")
 
+    elif action == "list_store":
+        result = list_store.remote()
+        files = result.get("files", [])
+        store = result.get("store_name") or "(none)"
+        if not files:
+            print(f"\n[list_store] No files indexed. Store: {store}")
+        else:
+            print(f"\n[list_store] {len(files)} file(s) in store: {store}")
+            for f in files:
+                print(f"  • {f}")
+    elif action == "remove_files":
+        if not book_list:
+            print("[remove] No files specified. Use --books to specify files to remove.")
+            return
+        result = remove_files.remote(book_list)
+        print(f"\n[done] Removed {result['removed']} file(s).")
+        if result["not_found"]:
+            print(f"[remove] Not found: {result['not_found']}")
     elif action == "purge_store":
         result = purge_store.remote()
         print(f"\n[done] {result}")
@@ -421,5 +516,5 @@ def main(
     else:
         print(
             f"Unknown action '{action}'. "
-            "Choose: upload_books | ingest | query | purge_store"
+            "Choose: upload_books | ingest | list_store | query | purge_store"
         )

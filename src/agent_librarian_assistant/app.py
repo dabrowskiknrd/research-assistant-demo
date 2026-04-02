@@ -413,4 +413,30 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import argparse as _argparse
+
+    _parser = _argparse.ArgumentParser(description="Paths-based Librarian Research Agent")
+    _parser.add_argument("--path", default=None, help="Research a single file path non-interactively")
+    _cli_args = _parser.parse_args()
+
+    if _cli_args.path:
+        # When stdout is piped, rich defaults to 80-column wrap.
+        # Force a wide console so output is not wrapped mid-sentence.
+        from rich import reconfigure as _rich_reconfigure
+        _rich_reconfigure(width=220, force_terminal=False, no_color=True)
+
+        async def _run_single_path() -> None:
+            exa_api_key = os.getenv("EXA_API_KEY")
+            if not exa_api_key:
+                raise RuntimeError("EXA_API_KEY environment variable is required.")
+            _exa = Exa(api_key=exa_api_key)
+            _client = Client()
+            _parsed = parse_path_input(_cli_args.path)
+            if _parsed is None:
+                print(f"Cannot parse path: {_cli_args.path!r}")
+                return
+            await research_source(_parsed, _exa, _client)
+
+        asyncio.run(_run_single_path())
+    else:
+        asyncio.run(main())
